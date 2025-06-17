@@ -92,6 +92,16 @@ def human_response_function() -> ChatMessageContent:
 
 
 async def main():
+    '''
+    Entry point for starting the entire agent workflow.
+
+    Parameters:
+        None
+
+    Returns:
+        None
+    '''
+
     handoff_orchestration = HandoffOrchestration(
         members=[triage_agent, booking_agent],
         handoffs=handoffs,
