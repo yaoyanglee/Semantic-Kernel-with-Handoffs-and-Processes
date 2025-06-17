@@ -2,6 +2,8 @@ import os
 import configparser
 import asyncio
 
+from process import booking_process
+
 from openai import AzureOpenAI
 
 from semantic_kernel.agents import Agent, ChatCompletionAgent, HandoffOrchestration, OrchestrationHandoffs
@@ -46,8 +48,8 @@ class VaccinationBookingPlugIn:
         pass
 
     @kernel_function
-    def vaccination_process(self):
-        print("Vaccination Process")
+    async def vaccination_process(self):
+        await booking_process()
 
 
 # Defining the agents
@@ -92,6 +94,16 @@ def human_response_function() -> ChatMessageContent:
 
 
 async def main():
+    '''
+    Entry point for starting the entire agent workflow.
+
+    Parameters:
+        None
+
+    Returns:
+        None
+    '''
+
     handoff_orchestration = HandoffOrchestration(
         members=[triage_agent, booking_agent],
         handoffs=handoffs,
