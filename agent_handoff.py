@@ -38,17 +38,7 @@ model = AzureChatCompletion(
 
 # Workflows:
 # 1. Make a vaccination booking
-# 2. Check what vaccines I am eligible for
-
-
-class TriagePlugin:
-    def __init__(self):
-        pass
-
-    @kernel_function
-    def triage(self):
-        print("Triage Agent")
-
+# 2. Handling general queries
 
 class VaccinationBookingPlugIn:
     def __init__(self):
@@ -66,7 +56,6 @@ triage_agent = ChatCompletionAgent(
     description='Triages user requests.',
     instructions='Handle user requests.',
     service=model,
-    plugins=[TriagePlugin()]
 )
 
 booking_agent = ChatCompletionAgent(
@@ -104,19 +93,48 @@ handoffs = (
 
 
 def agent_response_callback(message: ChatMessageContent) -> None:
-    """Observer function to print the messages from the agents."""
+    """
+    Observer function to print the messages from the agents.
+
+    Parameters:
+        None
+
+    Returns:
+        None
+    """
     print(f"{message.name}: {message.content}")
 
 
 def human_response_function() -> ChatMessageContent:
-    """Observer function to print the messages from the agents."""
-    user_input = input("User: ")
-    return ChatMessageContent(role=AuthorRole.ASSISTANT, content=user_input)
+    """
+    Observer function to print the messages from the agents. Additionally provides graceful exit for users to end the agent orchestration
+
+    Parameters:
+        None
+
+    Returns:
+        None
+    """
+    try:
+        user_input = input("User (type 'exit' to quit): ")
+
+        if user_input.strip().lower() == 'exit':
+            print("Exiting agentic flow...")
+            # This will signal the runtime to stop
+            raise KeyboardInterrupt()
+
+        return ChatMessageContent(role=AuthorRole.ASSISTANT, content=user_input)
+    except KeyboardInterrupt:
+        print("Orchestration interrupted by user. Exiting...")
+        return ChatMessageContent(role=AuthorRole.ASSISTANT, content="Exiting agent orchestration")
 
 
 async def main():
     '''
     Entry point for starting the entire agent workflow.
+    - Defines the agent handoff orchestration
+    - Creates a runtime for the handoffs
+    - Invokes the handoff orchestration
 
     Parameters:
         None
@@ -125,32 +143,40 @@ async def main():
         None
     '''
 
-    # Ask user for task
-    user_input = input("What would you like to do? ")
+    try:
+        # Ask user for task
+        user_input = input("What would you like to do? (Type 'exit' to quit) ")
 
-    handoff_orchestration = HandoffOrchestration(
-        members=[triage_agent, booking_agent, general_questions_agent],
-        handoffs=handoffs,
-        agent_response_callback=agent_response_callback,
-        human_response_function=human_response_function,
-    )
+        if user_input.strip().lower() == 'exit':
+            print("Exiting before starting orchestration.")
+            return
 
-    # 2. Create a runtime and start it
-    runtime = InProcessRuntime()
-    runtime.start()
+        handoff_orchestration = HandoffOrchestration(
+            members=[triage_agent, booking_agent, general_questions_agent],
+            handoffs=handoffs,
+            agent_response_callback=agent_response_callback,
+            human_response_function=human_response_function,
+        )
 
-    # 3. Invoke the orchestration with a task and the runtime
-    orchestration_result = await handoff_orchestration.invoke(
-        task=user_input,
-        runtime=runtime,
-    )
+        # 2. Create a runtime and start it
+        runtime = InProcessRuntime()
+        runtime.start()
 
-    # 4. Wait for the results
-    value = await orchestration_result.get()
-    print(value)
+        # 3. Invoke the orchestration with a task and the runtime
+        orchestration_result = await handoff_orchestration.invoke(
+            task=user_input,
+            runtime=runtime,
+        )
 
-    # 5. Stop the runtime after the invocation is complete
-    await runtime.stop_when_idle()
+        # 4. Wait for the results
+        value = await orchestration_result.get()
+        print(value)
+
+        # 5. Stop the runtime after the invocation is complete
+        await runtime.stop_when_idle()
+
+    except KeyboardInterrupt:
+        print("Orchestration interrupted by user. Exiting...")
 
 if __name__ == "__main__":
     asyncio.run(main())

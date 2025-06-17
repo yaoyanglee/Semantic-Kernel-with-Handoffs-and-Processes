@@ -47,6 +47,21 @@ model = AzureChatCompletion(
 class PatientInfoStep(KernelProcessStep):
     @kernel_function
     async def handle_patient_info(self):
+        '''
+        Prompts the user for required information and retrieves patient information
+
+        Parameters:
+            None
+
+        Returns:
+            patient_info (dict): A dictionary containing patient information.
+            {
+                "patient_name": name,
+                "age": age,
+                "gender": gender,
+                "is_vaccinated": is_vaccinated
+            }
+        '''
         name = self.get_patient_name()
         appt_time = self.get_appt_time()
 
@@ -87,6 +102,22 @@ class PatientInfoStep(KernelProcessStep):
         return user_input
 
     def get_patient_info(self, name):
+        '''
+        Retrieves patient information based on the patient name
+
+        Parameters:
+            name (str): The patient name
+
+        Returns:
+            patient_info (dict): A dictionary containing patient information.
+            {
+                "patient_name": name,
+                "age": age,
+                "gender": gender,
+                "is_vaccinated": is_vaccinated
+            }
+        '''
+
         patient_filepath = r"C:\Users\yylee\OneDrive\Desktop\synapxe\playground\agent_evaluation\patient_data_information.xlsx"
 
         try:
@@ -128,6 +159,19 @@ class PatientInfoStep(KernelProcessStep):
 class RetrieveVaccineInfoStep(KernelProcessStep):
     @kernel_function
     async def retrieve_vaccine_info(self, patient_info):
+        '''
+        Retrieves the eligible vaccines for the patient based on patient age and gender
+
+        Parameters:
+            patient_info (dict): The dictionary from the kernel function in PatientInfoStep
+
+        Returns:
+            result (dict): A dictionary of the vaccines the patient is eligible for and the requested appointment time by the user
+            {
+                'vaccines': vaccines,
+                'appointment_time': patient_info['appointment_time']
+            }
+        '''
         if patient_info is not None:
             vaccine_path = r"C:\Users\yylee\OneDrive\Desktop\synapxe\playground\agent_evaluation\vaccine_list.xlsx"
 
@@ -170,7 +214,15 @@ class RetrieveVaccineInfoStep(KernelProcessStep):
 class BookingStep(KernelProcessStep):
     @kernel_function
     async def handle_booking(self, vaccine_info):
-        # print(vaccine_info)
+        '''
+        Handles the appointment booking by booking a valid booking slot
+
+        Parameters:
+            vaccine_info (dict): A dictionary from the kernel function in RetrieveVaccineInfoStep
+
+        Returns:
+            (dict): A dictionary on the status of the vaccination booking outcome
+        '''
 
         vaccines_list = vaccine_info['vaccines']
         appt_time = vaccine_info['appointment_time']
