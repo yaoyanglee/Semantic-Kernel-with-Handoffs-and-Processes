@@ -15,8 +15,6 @@ from semantic_kernel.functions import kernel_function
 # Setting up environment variables
 # --- Load all configuration settings ---
 config = configparser.ConfigParser()
-# config.read(
-#     r'./config.prop')
 config_path = os.path.join(os.path.dirname(__file__), "config.prop")
 config.read(config_path)
 
@@ -43,6 +41,15 @@ model = AzureChatCompletion(
 # 2. Check what vaccines I am eligible for
 
 
+class TriagePlugin:
+    def __init__(self):
+        pass
+
+    @kernel_function
+    def triage(self):
+        print("Triage Agent")
+
+
 class VaccinationBookingPlugIn:
     def __init__(self):
         pass
@@ -58,7 +65,8 @@ triage_agent = ChatCompletionAgent(
     name='TriageAgent',
     description='Triages user requests.',
     instructions='Handle user requests.',
-    service=model
+    service=model,
+    plugins=[TriagePlugin()]
 )
 
 booking_agent = ChatCompletionAgent(
@@ -69,15 +77,28 @@ booking_agent = ChatCompletionAgent(
     plugins=[VaccinationBookingPlugIn()]
 )
 
+general_questions_agent = ChatCompletionAgent(
+    name='GeneralAgent',
+    description='A patient support agent that handles answering any questions that the patients may have',
+    instructions='Handle general patient questions.',
+    service=model,
+)
+
 handoffs = (
-    OrchestrationHandoffs().add(
+    OrchestrationHandoffs().add_many(
         source_agent='TriageAgent',
-        target_agent='BookingAgent',
-        description='=Transfer to this agent is the issue is appointment booking related.'
+        target_agents={
+            'BookingAgent': 'Transfer to this agent is the issue is appointment booking related.',
+            'GeneralAgent': 'Transfer to this agent if the goal is to answer user queries unrelated to appointment booking'
+        }
     ).add(
         source_agent='BookingAgent',
         target_agent='TriageAgent',
-        description='Return to the triage agent if the issue is not appointment booking related.'
+        description='Return to the triage agent once done with appointment booking.'
+    ).add(
+        source_agent='GeneralAgent',
+        target_agent='TriageAgent',
+        description='Return to the triage agent once done with answering user queries.'
     )
 )
 
@@ -104,8 +125,11 @@ async def main():
         None
     '''
 
+    # Ask user for task
+    user_input = input("What would you like to do? ")
+
     handoff_orchestration = HandoffOrchestration(
-        members=[triage_agent, booking_agent],
+        members=[triage_agent, booking_agent, general_questions_agent],
         handoffs=handoffs,
         agent_response_callback=agent_response_callback,
         human_response_function=human_response_function,
@@ -117,7 +141,7 @@ async def main():
 
     # 3. Invoke the orchestration with a task and the runtime
     orchestration_result = await handoff_orchestration.invoke(
-        task="I would like to book an influenza vaccine at 10am today",
+        task=user_input,
         runtime=runtime,
     )
 
