@@ -13,6 +13,8 @@ We aim to leverage the agent orchestration to handle a wide variety of potential
 
 The diagram below illustrates the architecture of the Agent Orchestration with Process Framework.
 
+![Orchestration Diagram](./assets/sk%20handoff%20process.png)
+
 ## Debugging Notes
 
 ### Semantic Kernel content filtering exception - jailbreaking
