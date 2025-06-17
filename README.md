@@ -2,8 +2,8 @@
 
 ## Setup
 
-1. Create a virtual environment
-2. Install the requirements into the virtual environment
+1. Create a virtual environment `uv venv`
+2. Install the requirements into the virtual environment `uv pip install -r requirements.txt`
 
 ## Conceptual Overview
 
