@@ -1,4 +1,6 @@
+import os
 import asyncio
+import configparser
 from enum import Enum
 from typing import ClassVar
 
@@ -6,6 +8,7 @@ from pydantic import Field
 
 from semantic_kernel import Kernel
 from semantic_kernel.connectors.ai.chat_completion_client_base import ChatCompletionClientBase
+from semantic_kernel.connectors.ai.open_ai import AzureChatCompletion
 from semantic_kernel.connectors.ai.open_ai import OpenAIChatCompletion
 from semantic_kernel.contents import ChatHistory
 from semantic_kernel.functions import kernel_function
@@ -17,61 +20,100 @@ from semantic_kernel.processes.local_runtime.local_event import KernelProcessEve
 from semantic_kernel.processes.local_runtime.local_kernel_process import start
 from semantic_kernel.processes.process_builder import ProcessBuilder
 
-'''
-Initialising some dataclasses for the process steps
-'''
+# Setting up environment variables
+# --- Load all configuration settings ---
+config = configparser.ConfigParser()
+# config.read(
+#     r'./config.prop')
+config_path = os.path.join(os.path.dirname(__file__), "config.prop")
+config.read(config_path)
+
+os.environ["AZURE_OPENAI_ENDPOINT"] = config['azure_openai_gpt4o-mini']['endpoint']
+os.environ["AZURE_OPENAI_API_KEY"] = config['azure_openai_gpt4o-mini']['api_key']
+DEPLOYMENT_NAME = config['azure_openai_gpt4o-mini']['deployment']
+ENDPOINT = config['azure_openai_gpt4o-mini']['endpoint']
+API_KEY = config['azure_openai_gpt4o-mini']['api_key']
+API_VERSION = config['azure_openai_gpt4o-mini']['api_version']
+
+model = AzureChatCompletion(
+    service_id="default",
+    api_key=API_KEY,
+    endpoint=ENDPOINT,
+    deployment_name=DEPLOYMENT_NAME
+)
 
 
-class CommonEvents(Enum):
-    UserInputReceived = "UserInputReceived"
-    AssistantResponseGenerated = "AssistantResponseGenerated"
+class PatientInfoStep(KernelProcessStep):
+    @kernel_function
+    async def handle_patient_info(self):
+        # user_query = self.get_patient_info()
+        print("Get user info")
+
+    def get_patient_info(self):
+        '''
+        Asks for the users' age and gender and returns it
+
+        Parameters:
+            None
+
+        Returns:
+            user_input (str): A string containing the users' age and gender
+        '''
+
+        user_input = input("Please let me know your age and gender")
+
+        return user_input
 
 
-class ChatBotEvents(Enum):
-    StartProcess = "startProcess"
-    IntroComplete = "introComplete"
-    AssistantResponseGenerated = "assistantResponseGenerated"
-    Exit = "exit"
+class RetrieveVaccineInfoStep(KernelProcessStep):
+    @kernel_function
+    async def retrieve_vaccine_info(self):
+        print("Get vaccine info")
 
 
-'''
-Defining a class to maintain the state for the user inputs
-'''
+class BookingStep(KernelProcessStep):
+    @kernel_function
+    async def handle_booking(self):
+        print("Perform booking")
 
 
-class UserInputState(KernelBaseModel):
-    user_inputs: list[str] = []
-    current_input_index: int = 0
+kernel = Kernel()
 
 
-class UserInputStep(KernelProcessStep[UserInputState]):
-    GET_USER_INPUT: ClassVar[str] = "get_user_input"
+async def booking_process():
+    kernel.add_service(model)
 
-    def populate_user_inputs(self):
-        """Method to be overridden by the user to populate with custom user messages."""
-        pass
+    process = ProcessBuilder(name="VaccinationBooking")
 
-    async def activate(self, state: KernelProcessStepState[UserInputState]):
-        """Activates the step and sets the state."""
-        state.state = state.state or self.create_default_state()
-        self.state = state.state
-        self.populate_user_inputs()
+    # Defining all steps in the process
+    patient_info_step = process.add_step(PatientInfoStep)
+    retrieve_vaccine_info_step = process.add_step(RetrieveVaccineInfoStep)
+    booking_step = process.add_step(BookingStep)
 
-    @kernel_function(name=GET_USER_INPUT)
-    async def get_user_input(self, context: KernelProcessStepContext):
-        """Gets the user input."""
-        if not self.state:
-            raise ValueError("State has not been initialized")
+    # Defining entry point for the process
+    process.on_input_event(
+        # id should be the same as 'initial_event' in start
+        event_id="Start appointment booking").send_event_to(target=patient_info_step)
 
-        user_message = input("USER: ")
+    # Defining the sequential steps after the entry point
+    patient_info_step.on_function_result(
+        "handle_patient_info").send_event_to(retrieve_vaccine_info_step)
+    retrieve_vaccine_info_step.on_function_result(
+        "retrieve_vaccine_info").send_event_to(booking_step)
+    booking_step.on_function_result("handle_booking").stop_process()
 
-        # print(f"USER: {user_message}")
+    # Build the kernel process
+    kernel_process = process.build()
 
-        if "exit" in user_message:
-            await context.emit_event(process_event=ChatBotEvents.Exit, data=None)
-            return
+    # Start the process
+    await start(
+        process=kernel_process,
+        kernel=kernel,
+        initial_event=KernelProcessEvent(
+            # id here should be the same as the if in 'on_input_event'
+            id="Start appointment booking", data="I want to book a flu vaccine"),
+    )
 
-        self.state.current_input_index += 1
-
-        # Emit the user input event
-        await context.emit_event(process_event=CommonEvents.UserInputReceived, data=user_message)
+if __name__ == "__main__":
+    # if you want to run this sample with your won input, set the below parameter to False
+    asyncio.run(booking_process())
