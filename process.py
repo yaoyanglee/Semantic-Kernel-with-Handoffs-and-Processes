@@ -3,6 +3,7 @@ import asyncio
 import configparser
 from enum import Enum
 from typing import ClassVar
+import pandas as pd
 
 from pydantic import Field
 
@@ -36,7 +37,7 @@ API_KEY = config['azure_openai_gpt4o-mini']['api_key']
 API_VERSION = config['azure_openai_gpt4o-mini']['api_version']
 
 model = AzureChatCompletion(
-    service_id="default",
+    service_id="AppointmentBooking",
     api_key=API_KEY,
     endpoint=ENDPOINT,
     deployment_name=DEPLOYMENT_NAME
@@ -46,10 +47,15 @@ model = AzureChatCompletion(
 class PatientInfoStep(KernelProcessStep):
     @kernel_function
     async def handle_patient_info(self):
-        # user_query = self.get_patient_info()
-        print("Get user info")
+        name = self.get_patient_name()
+        appt_time = self.get_appt_time()
 
-    def get_patient_info(self):
+        patient_info = self.get_patient_info(name)
+        patient_info['appointment_time'] = appt_time
+
+        return patient_info
+
+    def get_patient_name(self):
         '''
         Asks for the users' age and gender and returns it
 
@@ -60,28 +66,182 @@ class PatientInfoStep(KernelProcessStep):
             user_input (str): A string containing the users' age and gender
         '''
 
-        user_input = input("Please let me know your age and gender")
+        user_input = input("What is your name? ")
 
         return user_input
+
+    def get_appt_time(self):
+        '''
+        Asks for the users' appointment time
+
+        Parameters:
+            None
+
+        Returns:
+            user_input (str): A string containing the users' age and gender
+        '''
+
+        user_input = input(
+            "What time would you like to schedule the appointment? ")
+
+        return user_input
+
+    def get_patient_info(self, name):
+        patient_filepath = r"C:\Users\yylee\OneDrive\Desktop\synapxe\playground\agent_evaluation\patient_data_information.xlsx"
+
+        try:
+            df = pd.read_excel(patient_filepath, engine='openpyxl')
+            print
+            # Check if necessary columns exist
+            required_columns = {"patient_name",
+                                "age", "gender", "is_vaccinated"}
+            if not required_columns.issubset(df.columns):
+                return {"error": "Missing required columns in the dataset."}
+
+            # Search for patient
+            patient_row = df[df["patient_name"].str.lower() ==
+                             name.lower()]
+
+            if patient_row.empty:
+                return {"error": f"No data found for patient '{name}'."}
+
+            # Extract required details
+            age = patient_row["age"].values[0]
+            gender = patient_row["gender"].values[0]
+            is_vaccinated = patient_row["is_vaccinated"].values[0]
+
+            result = {
+                "patient_name": name,
+                "age": age,
+                "gender": gender,
+                "is_vaccinated": is_vaccinated
+            }
+
+            return result
+
+        except Exception as e:
+            print("Error: ", e)
+
+            return None
 
 
 class RetrieveVaccineInfoStep(KernelProcessStep):
     @kernel_function
-    async def retrieve_vaccine_info(self):
-        print("Get vaccine info")
+    async def retrieve_vaccine_info(self, patient_info):
+        if patient_info is not None:
+            vaccine_path = r"C:\Users\yylee\OneDrive\Desktop\synapxe\playground\agent_evaluation\vaccine_list.xlsx"
+
+            print(patient_info)
+
+            try:
+                df = pd.read_excel(vaccine_path, engine='openpyxl')
+
+                # Filter based on age range and gender
+                filtered_df = df[(df['age_floor'] <= patient_info['age']) & (df['age_ceiling'] > patient_info['age']) & (
+                    df['gender'].str.lower() == patient_info['gender'].lower())]
+
+                # Extract and return the list of vaccines
+                if not filtered_df.empty:
+                    vaccines = filtered_df['vaccine_list'].values[0]
+                    vaccines = vaccines.split(', ')
+
+                    result = {
+                        'vaccines': vaccines,
+                        'appointment_time': patient_info['appointment_time']
+                    }
+
+                    return result
+
+                else:
+                    result = "There are no vaccines eligible for the current patient."
+                    return None
+
+            except Exception as e:
+                print(f"Error reading the file: {e}")
+                result = "There are no vaccines eligible for the current patient, due to an error when reading the file."
+                return None
+
+        else:
+            print(
+                "No vaccine information found for the current patient. Please check the patient name")
+            return None
 
 
 class BookingStep(KernelProcessStep):
     @kernel_function
-    async def handle_booking(self):
-        print("Perform booking")
+    async def handle_booking(self, vaccine_info):
+        # print(vaccine_info)
+
+        vaccines_list = vaccine_info['vaccines']
+        appt_time = vaccine_info['appointment_time']
+
+        booking_slots = self.retrieve_booking_slots()
+
+        user_vaccine_request = self.retrieve_desired_vaccine()
+
+        if user_vaccine_request in vaccines_list:
+            if appt_time in booking_slots:
+                result = f"Successfully booked vaccination slot at {appt_time} for the vaccine, {user_vaccine_request}"
+                print(result)
+                return {'status': 'Success'}
+            else:
+                print(
+                    f"The appointment time: {appt_time} is not available please give another time or check that the formating is similar to, 9am")
+                print(f"Available time slots: {booking_slots}")
+                return {'status': 'Failure'}
+
+        else:
+            print(
+                f"You are not eligible for the vaccine. {user_vaccine_request}")
+            return {'status': 'Failure'}
+
+    def retrieve_booking_slots(self):
+        """Retrieve available vaccination booking slots.
+
+        This function provides a list of time slots currently open for booking.
+
+        Returns:
+            list: A list of available booking time slots.
+        """
+        booking_slots = ['2pm', '4pm', '5pm', '9am', '3pm']
+
+        return booking_slots
+
+    def retrieve_desired_vaccine(self):
+        '''
+        Asks for the users' appointment time
+
+        Parameters:
+            None
+
+        Returns:
+            user_input (str): A string containing the users' age and gender
+        '''
+
+        user_input = input(
+            "What vaccine would you like to book a vaccination for? ")
+
+        return user_input
 
 
 kernel = Kernel()
+kernel.add_service(model)
 
 
 async def booking_process():
-    kernel.add_service(model)
+    '''
+    Creates the appointment booking process. Key steps:
+    - Create and add steps to the process object
+    - Define transition conditions, i.e. End of the current step and when to transition to the next step in the process
+    - Building the process
+    - Running the entire process
+
+    Parameters:
+        None
+
+    Returns:
+        None
+    '''
 
     process = ProcessBuilder(name="VaccinationBooking")
 
@@ -97,12 +257,14 @@ async def booking_process():
 
     # Defining the sequential steps after the entry point
     patient_info_step.on_function_result(
-        "handle_patient_info").send_event_to(retrieve_vaccine_info_step)
+        "handle_patient_info").send_event_to(target=retrieve_vaccine_info_step, parameter_name="patient_info",)
+
     retrieve_vaccine_info_step.on_function_result(
-        "retrieve_vaccine_info").send_event_to(booking_step)
+        "retrieve_vaccine_info").send_event_to(target=booking_step, parameter_name="vaccine_info")
+
     booking_step.on_function_result("handle_booking").stop_process()
 
-    # Build the kernel process
+    # Build the kernel process with the process state initialized
     kernel_process = process.build()
 
     # Start the process
@@ -111,9 +273,8 @@ async def booking_process():
         kernel=kernel,
         initial_event=KernelProcessEvent(
             # id here should be the same as the if in 'on_input_event'
-            id="Start appointment booking", data="I want to book a flu vaccine"),
+            id="Start appointment booking", task='Make a vaccination appointment booking'),
     )
 
-if __name__ == "__main__":
-    # if you want to run this sample with your won input, set the below parameter to False
-    asyncio.run(booking_process())
+# if __name__ == "__main__":
+#     asyncio.run(booking_process())
