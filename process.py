@@ -276,6 +276,30 @@ class BookingStep(KernelProcessStep):
         return user_input
 
 
+class ParallelStepA(KernelProcessStep):
+    @kernel_function
+    def parallel_step(self):
+        print("This is a parallel step A")
+
+        return {"Status": "Success"}
+
+
+class ParallelStepB(KernelProcessStep):
+    @kernel_function
+    def parallel_step(self):
+        print("This is a parallel step B")
+
+        return {"Status": "Success"}
+
+
+class HandleParallelStep(KernelProcessStep):
+    @kernel_function
+    def handle_parallel_finish_process(self):
+        print("Completed parallel steps and ending the process")
+
+        return {"Status": "Appointment Booking Process Finished"}
+
+
 kernel = Kernel()
 kernel.add_service(model)
 
@@ -301,20 +325,34 @@ async def booking_process():
     patient_info_step = process.add_step(PatientInfoStep)
     retrieve_vaccine_info_step = process.add_step(RetrieveVaccineInfoStep)
     booking_step = process.add_step(BookingStep)
+    parallel_step_A = process.add_step(ParallelStepA)
+    parallel_step_B = process.add_step(ParallelStepB)
+    handle_finish_step = process.add_step(HandleParallelStep)
 
     # Defining entry point for the process
     process.on_input_event(
         # id should be the same as 'initial_event' in start
         event_id="Start appointment booking").send_event_to(target=patient_info_step)
 
-    # Defining the sequential steps after the entry point
+    # Defining the steps after the entry point
     patient_info_step.on_function_result(
-        "handle_patient_info").send_event_to(target=retrieve_vaccine_info_step, parameter_name="patient_info",)
+        "handle_patient_info").send_event_to(target=retrieve_vaccine_info_step, parameter_name="patient_info")
 
     retrieve_vaccine_info_step.on_function_result(
         "retrieve_vaccine_info").send_event_to(target=booking_step, parameter_name="vaccine_info")
 
-    booking_step.on_function_result("handle_booking").stop_process()
+    # Defining parallel steps after this
+    booking_step.on_function_result("handle_booking").send_event_to(
+        target=parallel_step_A).send_event_to(target=parallel_step_B)
+
+    parallel_step_A.on_function_result("parallel_step").send_event_to(
+        target=handle_finish_step)
+    parallel_step_B.on_function_result("parallel_step").send_event_to(
+        target=handle_finish_step)
+
+    # Define the end of the process
+    handle_finish_step.on_function_result(
+        "handle_parallel_finish_process").stop_process()
 
     # Build the kernel process with the process state initialized
     kernel_process = process.build()
