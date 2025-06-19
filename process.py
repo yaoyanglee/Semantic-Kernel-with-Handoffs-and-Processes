@@ -118,7 +118,9 @@ class PatientInfoStep(KernelProcessStep):
             }
         '''
 
-        patient_filepath = r"C:\Users\yylee\OneDrive\Desktop\synapxe\playground\agent_evaluation\patient_data_information.xlsx"
+        # Build the file path relative to the script's directory
+        patient_filepath = os.path.join(os.path.dirname(
+            __file__), "data", "patient_data_information.xlsx")
 
         try:
             df = pd.read_excel(patient_filepath, engine='openpyxl')
@@ -173,7 +175,10 @@ class RetrieveVaccineInfoStep(KernelProcessStep):
             }
         '''
         if patient_info is not None:
-            vaccine_path = r"C:\Users\yylee\OneDrive\Desktop\synapxe\playground\agent_evaluation\vaccine_list.xlsx"
+
+            # Build the file path relative to the script's directory
+            vaccine_path = os.path.join(os.path.dirname(
+                __file__), "data", "vaccine_list.xlsx")
 
             print(patient_info)
 
