@@ -310,6 +310,10 @@ async def booking_process():
     - Create and add steps to the process object
     - Define transition conditions, i.e. End of the current step and when to transition to the next step in the process
     - Building the process
+        - Including the parallel process into the sequential process
+        - After booking is complete
+            - booking_step -> parallel_step_A, booking_step -> parallel_step_B, 
+            - parallel_step_A -> booking_step, parallel_step_B -> booking_step
     - Running the entire process
 
     Parameters:
